@@ -1,0 +1,35 @@
+import "lib.spwn"
+
+extract obj_props
+
+output = @qoi::decode("./qoi_test_images/edgecase.qoi", true, false)
+
+scaling = 0.5
+
+// image_flat = output.image.flatten()
+
+red_color = ?c
+red_color.set(rgb8(255,0,0))
+
+for x in 0..output.width {
+    for y in 0..output.height {
+        color = output.image[x][y] // image_flat[x * output.width + y]
+
+        if color.a == 0 { continue }
+
+        rgba_color = rgb8(color.r, color.g, color.b, color.a)
+        hue = rgba_color.h360()
+        saturation = rgba_color.s()
+        value = rgba_color.v()
+
+        $.add(obj {
+            OBJ_ID: 211,
+            X: x * 30 * scaling + 90,
+            Y: (output.height - y - 1) * 30 * scaling + 90,
+            SCALING: scaling,
+            HVS_ENABLED: true,
+            HVS: "{}a{}a{}a0a0".fmt([ hue, saturation, value ]),
+            COLOR: red_color,
+        })
+    }
+}
