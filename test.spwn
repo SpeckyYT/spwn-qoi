@@ -29,7 +29,7 @@ for x in 0..output.width {
             Y: (output.height - y - 1) * 30 * scaling + 90,
             SCALING: scaling,
             HVS_ENABLED: true,
-            HVS: "{}a{}a{}a0a0".fmt([ hue, saturation, value ]),
+            HVS: f"{hue}a{saturation}a{value}a0a0",
             COLOR: red_color,
         })
     }

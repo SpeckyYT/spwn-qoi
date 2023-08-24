@@ -1,5 +1,5 @@
 extract import "../SPWN-Language/libraries/core/lib.spwn"
-extract import "../SPWN-Language/libraries/std/lib.spwn"
+// extract import "../SPWN-Language/libraries/std/lib.spwn"
 
 type @qoi
 
@@ -7,7 +7,7 @@ BLACK_COLOR = { r: 0, g: 0, b: 0, a: 255 }
 BLACK_COLOR_TRANSPARENT = { r: 0, g: 0, b: 0, a: 0 }
 
 impl @qoi {
-    decode: (og_bytes/*: [@int]*/, debug: @bool = false, spam_debug: @bool = false) -> @qoi {
+    decode: (og_bytes: @int[_], debug: @bool = false, spam_debug: @bool = false) -> @qoi {
         // start_time = $.time()
 
         mut bytes = og_bytes
@@ -20,47 +20,64 @@ impl @qoi {
             // $.print("Read file: {}s".fmt(start_process_time - start_time))
         }
 
-        next_bytes = (n: @int&>=1){
+        unwrap_byte = (option) -> @int {
+            for i in 0..256 {
+                if option == i? {
+                    return i
+                }
+            }
+            throw "didn't find 💀"
+        }
+
+        next_bytes = (n: @int&>=0) -> @int[_] {
             mut these_bytes = []
             for i in 0..n {
-                these_bytes.push(bytes.shift())
+                these_bytes.push(unwrap_byte(bytes.shift()))
             }
             return these_bytes
         }
-        size = (n: @int&>=1, be: @bool = true) {
+        size = (n: @int&>=0, be: @bool = false) -> @int {
             mut current_value = 0
             mut these_bytes = next_bytes(n)
             for i in 0..n {
-                current_value += these_bytes[i] * 2^((n-i-1)*8 if be else i*8)
+                current_value += these_bytes[i] << (i if be else n-i-1) 
             }
             return current_value
         }
 
         
-        if next_bytes(4) != [113?,111?,105?,102?] {
+        if next_bytes(4) != [113,111,105,102] {
             throw "Magic bytes not found"
         }
-            
-        dbg "test"
+
         width = size(4)
         height = size(4)
-            
 
-        mut image = [ [ BLACK_COLOR_TRANSPARENT ] * height ] * width // setting to transparent black is what makes the most sense
+        // mut image = [ [ BLACK_COLOR_TRANSPARENT ] * height ] * width // setting to transparent black is what makes the most sense
+        mut image = []
+        for y in 0..height {
+            image.push([])
+            for x in 0..width {
+                image[y].push(BLACK_COLOR_TRANSPARENT)
+            }
+        }
 
         channels = next_bytes(1)[0]
-        if ![3,4].contains(channels) {
+        if channels is !=3&!=4 {
             throw "Invalid channels byte"
         }
 
         colorspace = next_bytes(1)[0]
-        if ![0,1].contains(colorspace) {
+        if colorspace is !=0&!=1 {
             throw "Invalid colorspace byte"
         }
 
         mut previous_color = BLACK_COLOR
 
-        mut previous_colors = [ () ] * 64
+        // mut previous_colors = [ () ] * 64
+        mut previous_colors = []
+        for i in 0..64 { previous_colors.push(()) }
+
         previous_colors[@qoi::hash_color(0,0,0,255)] = BLACK_COLOR
         previous_colors[@qoi::hash_color(0,0,0,0)] = BLACK_COLOR_TRANSPARENT
 
@@ -78,6 +95,7 @@ impl @qoi {
 
         while x < width && y < height {
             if bytes.length <= 0 {
+                $.print(bytes, f"{x}/{width}", f"{y}/{height}")
                 if debug { $.print("Decoding ended prematurely") }
                 break
             }
@@ -123,7 +141,7 @@ impl @qoi {
 
                     drdgdbdg = next_bytes(1)[0]
                     // -8 bias
-                    dr_dg = $.floor(drdgdbdg / 2^4 - 8)
+                    dr_dg = drdgdbdg / 2^4 - 8 // int division is floored by default
                     db_dg = drdgdbdg % 2^4 - 8
 
                     r = (previous_color.r + diff_green + dr_dg) % 256
@@ -203,8 +221,8 @@ impl @qoi {
         if debug {
             // processing_time = $.time() - start_process_time
             // $.print("Finished processing: {}s".fmt(processing_time))
-            $.print("Width: {}".fmt(width))
-            $.print("Height: {}".fmt(height))
+            $.print(f"Width: {width}")
+            $.print(f"Height: {height}")
             // $.print("Bytes/second: {}b/s".fmt(byte_count/processing_time))
         }
 
