@@ -8,17 +8,19 @@ BLACK_COLOR_TRANSPARENT = { r: 0, g: 0, b: 0, a: 0 }
 
 impl @qoi {
     decode: (og_bytes: @int[_], debug: @bool = false, spam_debug: @bool = false) -> @qoi {
-        // start_time = $.time()
+        start_time = $.time()
 
         mut bytes = og_bytes
 
         byte_count = bytes.length
 
-        // start_process_time = $.time()
+        start_process_time = $.time()
         if debug {
-            dbg f"Bytes: {byte_count}b"
-            // $.print("Read file: {}s".fmt(start_process_time - start_time))
+            $.print(f"Bytes: {byte_count}b")
+            // $.print(f"Read file: {start_process_time - start_time}s")
         }
+
+        mut wasted_time = []
 
         unwrap_byte = (option) -> @int {
             for i in 0..256 {
@@ -32,7 +34,10 @@ impl @qoi {
         next_bytes = (n: @int&>=0) -> @int[_] {
             mut these_bytes = []
             for i in 0..n {
-                these_bytes.push(unwrap_byte(bytes.shift()))
+                inner_unwrap_time = $.time()
+                unwrapped_byte = unwrap_byte(bytes.shift())
+                wasted_time.push($.time() - inner_unwrap_time)
+                these_bytes.push(unwrapped_byte)
             }
             return these_bytes
         }
@@ -40,7 +45,7 @@ impl @qoi {
             mut current_value = 0
             mut these_bytes = next_bytes(n)
             for i in 0..n {
-                current_value += these_bytes[i] << (i if be else n-i-1) 
+                current_value += these_bytes[i] << ((i * 8) if be else ((n-i-1) * 8)) 
             }
             return current_value
         }
@@ -53,12 +58,17 @@ impl @qoi {
         width = size(4)
         height = size(4)
 
+        if debug {
+            $.print(f"Width: {width}")
+            $.print(f"Height: {height}")
+        }
+
         // mut image = [ [ BLACK_COLOR_TRANSPARENT ] * height ] * width // setting to transparent black is what makes the most sense
         mut image = []
-        for y in 0..height {
+        for x in 0..width {
             image.push([])
-            for x in 0..width {
-                image[y].push(BLACK_COLOR_TRANSPARENT)
+            for y in 0..height {
+                image[x].push(BLACK_COLOR_TRANSPARENT)
             }
         }
 
@@ -76,10 +86,10 @@ impl @qoi {
 
         // mut previous_colors = [ () ] * 64
         mut previous_colors = []
-        for i in 0..64 { previous_colors.push(()) }
+        for i in 0..64 { previous_colors.push(()) } // BLACK_COLOR_TRANSPARENT
 
         previous_colors[@qoi::hash_color(0,0,0,255)] = BLACK_COLOR
-        previous_colors[@qoi::hash_color(0,0,0,0)] = BLACK_COLOR_TRANSPARENT
+        // previous_colors[@qoi::hash_color(0,0,0,0)] = BLACK_COLOR_TRANSPARENT
 
         mut x = 0
         mut y = 0
@@ -122,6 +132,7 @@ impl @qoi {
                     if spam_debug { $.print(" ",length) }
 
                     for i in 0..length {
+                        // if y >= height { decrement_position(); ended = true; break }
                         image[x][y] = previous_color
                         increment_position()
                         if y >= height {
@@ -141,8 +152,8 @@ impl @qoi {
 
                     drdgdbdg = next_bytes(1)[0]
                     // -8 bias
-                    dr_dg = drdgdbdg / 2^4 - 8 // int division is floored by default
-                    db_dg = drdgdbdg % 2^4 - 8
+                    dr_dg = (drdgdbdg >> 4) - 8 // int division is floored by default
+                    db_dg = (drdgdbdg % (1<<4)) - 8
 
                     r = (previous_color.r + diff_green + dr_dg) % 256
                     g = (previous_color.g + diff_green) % 256
@@ -162,15 +173,16 @@ impl @qoi {
                 >=64&<=127 => () { // [QOI_OP_DIFF] color difference
                     if spam_debug { $.print("QOI_OP_DIFF") }
 
-                    mut current_byte = head_byte - 2^6
+                    mut current_byte = head_byte - (1<<6)
+
                     // -2 bias
                     mut dr = -2
                     mut dg = -2
                     mut db = -2
                     helper = (exp: @int, &var: @int) {
-                        if current_byte >= 2^exp {
-                            current_byte -= 2^exp
-                            var += 2^(exp % 2)
+                        if current_byte >= 1<<exp {
+                            current_byte -= 1<<exp
+                            var += 1<<(exp % 2)
                         }
                     }
                     helper(5, dr)
@@ -197,21 +209,26 @@ impl @qoi {
                 >=0&<=63 => () { // [QOI_OP_INDEX]
                     if spam_debug {
                         $.print("QOI_OP_INDEX")
-                        $.print(" {}".fmt(head_byte))
+                        $.print(f" {head_byte}")
+                    }
+
+                    if previous_colors[head_byte] == () {
+                        $.print(f"invalid hash {head_byte}")
+                        $.print(previous_colors)
+                        throw "invalid index hash"
                     }
 
                     image[x][y] = previous_colors[head_byte]
                 } (),
             }
 
-            // if image[x][y] != () {
-
+            if image[x][y] != () {
                 previous_color = image[x][y]
-            // } else {
-            //     $.print("got color () at index [{}/{}] {}".fmt([x,y,head_byte]))
-            //     if head_byte >= 64 { throw "{}".fmt(head_byte)}
-            //     throw "()"
-            // }
+            } else {
+                $.print(f"got color () at index [{x}/{y}] {head_byte}")
+                if head_byte >= 64 { throw f"{head_byte}" }
+                throw "()"
+            }
 
             if spam_debug { $.print(" ", image[x][y]) }
 
@@ -219,11 +236,13 @@ impl @qoi {
         }
 
         if debug {
-            // processing_time = $.time() - start_process_time
-            // $.print("Finished processing: {}s".fmt(processing_time))
-            $.print(f"Width: {width}")
-            $.print(f"Height: {height}")
-            // $.print("Bytes/second: {}b/s".fmt(byte_count/processing_time))
+            processing_time = $.time() - start_process_time
+            $.print(f"Finished processing: {processing_time}s")
+            $.print(f"Bytes/second: {byte_count/processing_time}b/s")
+
+            mut wasted_time_total = 0.0
+            for wasted_tim in wasted_time { wasted_time_total += wasted_tim }
+            $.print(f"Wasted time: {wasted_time_total}s ({100*wasted_time_total/processing_time}%)")
         }
 
         return @qoi::{
